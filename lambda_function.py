@@ -472,6 +472,7 @@ def configure_cloudfront(domain, s3bucket):
             'DomainName': '{}.s3.amazonaws.com'.format(s3bucket),
             'Id': 'lambda-letsencrypt-challenges',
             'OriginPath': "/{}".format(domain['CLOUDFRONT_ID']),
+            'CustomHeaders': {u'Quantity': 0},
             'S3OriginConfig': {u'OriginAccessIdentity': ''}
         })
 
@@ -495,8 +496,10 @@ def configure_cloudfront(domain, s3bucket):
             'ForwardedValues': {
                 u'Cookies': {u'Forward': 'none'},
                 'Headers': {'Quantity': 0},
-                'QueryString': False
+                'QueryString': False,
+                'QueryStringCacheKeys': {'Quantity': 0}
             },
+            'LambdaFunctionAssociations': {'Quantity': 0},
             'MaxTTL': 31536000,
             'MinTTL': 0,
             'PathPattern': '/.well-known/acme-challenge/*',
