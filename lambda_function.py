@@ -99,10 +99,12 @@ def s3_challenge_solver(domain, token, keyauth, bucket=None, prefix=None):
     logger.info("Writing {} into S3 Bucket {}".format(filename, bucket))
 
     expires = datetime.datetime.now() + datetime.timedelta(days=3)
-    s3.Object(bucket, filename).put(
+    challenge = s3.Object(bucket, filename)
+    challenge.put(
         Body=keyauth,
         Expires=expires
     )
+    challenge.Acl().put(ACL='public-read')
     return True
 
 
