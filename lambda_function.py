@@ -6,6 +6,7 @@ from dateutil.tz import tzutc
 from simple_acme import AcmeUser, AcmeAuthorization, AcmeCert
 from functools import partial
 import urllib2
+import dns.resolver
 
 # aws imports
 import boto3
@@ -152,10 +153,23 @@ def route53_challenge_solver(domain, token, keyauth, zoneid=None):
 
 
 def route53_challenge_verifier(domain, token, keyauth):
-    # TODO: this isn't implemented yet.
-    # XXX: DNS propagation may make this somewhat time consuming.
+    # From https://github.com/brendanmckenzie/lambda-letsencrypt/commit/5f7b5b5ed4541f885a4ea090e30b4b82951b42a3
+    # DNS propagation may make this somewhat time consuming.
     # try to resolve record '_acme-challenge.domain' and verify that the txt record value matches 'keyauth'
-    pass
+    logger.info('Attempting to verify Route53 challenge')
+    count = 0
+    record = '_acme-challenge.{}'.format(domain)
+    while count < 5:
+        try:
+            records = dns.resolver.query(record, 'TXT')
+            logger.info('records: {}'.format(records[0]))
+            return records[0].strings[0]
+        except:
+            logger.info('failed')
+            count += 1
+            sleep(5)
+
+    return False
 
 
 def authorize_domain(user, domain):
@@ -552,12 +566,18 @@ def lambda_handler(event, context):
     # Do a few sanity checks
     if not check_bucket(cfg.S3CONFIGBUCKET):
         logger.error("S3 configuration bucket does not exist")
-        # TODO: maybe send email?
+        notify_email(
+            "Lambda-LetsEncrypt config bucket missing {}".format(cfg.S3CONFIGBUCKET),
+            "S3 Configuration bucket {} required for managing certificates in {} is missing".format(cfg.S3CONFIGBUCKET, cfg.SITES)
+        )
         return False
 
     if not check_bucket(cfg.S3CHALLENGEBUCKET):
         logger.error("S3 challenge bucket does not exist")
-        # TODO: maybe send email?
+        notify_email(
+            "Lambda-LetsEncrypt challenge bucket missing {}".format(cfg.S3CHALLENGEBUCKET),
+            "S3 Challenge bucket {} required for LetsEncrypt verifications in {} is missing".format(cfg.S3CHALLENGEBUCKET, cfg.SITES)
+        )
         return False
 
     # check the certificates we want issued
