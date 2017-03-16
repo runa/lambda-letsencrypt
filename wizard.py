@@ -347,7 +347,7 @@ def wizard_summary(global_config):
     gc = global_config
 
     print_header("**Summary**")
-    print("Namespace:                              {}".format(gc['namespace']))
+    print("Namespace:                                       {}".format(gc['namespace']))
 
     print("Notification Email:                              {}".format(gc['sns_email'] or "(notifications disabled)"))
 
