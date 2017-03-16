@@ -472,7 +472,7 @@ def wizard_save_config(global_config):
     iam_arn = iam.get_arn(global_config['iam_role_name'])
     print("    IAM ARN: {}".format(iam_arn))
     print("    Uploading Function ", end='')
-    lambda_function_name = "lambda-letsencrypt-".format(global_config['namespace'])
+    lambda_function_name = "lambda-letsencrypt-{}".format(global_config['namespace'])
     if awslambda.create_function(lambda_function_name, iam_arn, 'lambda-letsencrypt-dist.zip'):
         print(colors.OKGREEN + u'\u2713' + colors.ENDC)
     else:
