@@ -243,6 +243,18 @@ def wizard_cf(global_config):
         }
         global_config['cf_sites'].append(site)
 
+def wizard_namespace(global_config):
+    namespace = None
+
+    print_header("Namespace")
+    write_str("""\
+        It is necessary to provide unique names when creating configuration and
+        challenge S3 buckets; provided value will be appended to default names.
+        In other cases uniqueness is not necessary although helpful if you need to
+        distinguish among resources.""")
+
+    namespace = get_input("Enter value to append to resource names (eg: foobar): ", allow_empty=False)
+    global_config['namespace'] = namespace
 
 def wizard_sns(global_config):
     sns_email = None
@@ -268,7 +280,7 @@ def wizard_s3_cfg_bucket(global_config):
     create_s3_cfg_bucket = get_yn("Create a bucket for configuration", True)
 
     if create_s3_cfg_bucket:
-        s3_cfg_bucket = "lambda-letsencrypt-config-{}".format(global_config['ts'])
+        s3_cfg_bucket = "lambda-letsencrypt-config-{}".format(global_config['namespace'])
     else:
         s3_cfg_bucket = choose_s3_bucket()
 
@@ -293,7 +305,7 @@ def wizard_iam(global_config):
             })
         iam_role_name = get_selection("Select the IAM Role:", options, prompt_after="Which IAM Role?", allow_empty=False)
     else:
-        iam_role_name = "lambda-letsencrypt"
+        iam_role_name = "lambda-letsencrypt-{}".format(global_config['namespace'])
 
     global_config['create_iam_role'] = create_iam_role
     global_config['iam_role_name'] = iam_role_name
@@ -319,7 +331,7 @@ def wizard_challenges(global_config):
     if use_http_challenges:
         create_s3_challenge_bucket = get_yn("Do you want to create a bucket for these challenges(Choose No to select an existing bucket)", True)
         if create_s3_challenge_bucket:
-            s3_challenge_bucket = "lambda-letsencrypt-challenges-{}".format(global_config['ts'])
+            s3_challenge_bucket = "lambda-letsencrypt-challenges-{}".format(global_config['namespace'])
         else:
             s3_challenge_bucket = choose_s3_bucket()
     else:
@@ -335,6 +347,8 @@ def wizard_summary(global_config):
     gc = global_config
 
     print_header("**Summary**")
+    print("Namespace:                              {}".format(gc['namespace']))
+
     print("Notification Email:                              {}".format(gc['sns_email'] or "(notifications disabled)"))
 
     print("S3 Config Bucket:                                {}".format(gc['s3_cfg_bucket']), end="")
@@ -407,7 +421,6 @@ def wizard_save_config(global_config):
 
     # create IAM role if required
     if global_config['create_iam_role']:
-        global_config['iam_role_name'] = 'lambda-letsencrypt-test-role'
         policy_document = iam.generate_policy_document(
             s3buckets=[
                 global_config['s3_cfg_bucket'],
@@ -416,6 +429,8 @@ def wizard_save_config(global_config):
             snstopicarn=sns_arn
         )
         iam_arn = iam.configure(global_config['iam_role_name'], policy_document)
+        # attempt to avoid error: The role defined for the function cannot be assumed by Lambda.
+        time.sleep(10)
 
     templatevars['S3_CONFIG_BUCKET'] = global_config['s3_cfg_bucket']
     templatevars['S3_CHALLENGE_BUCKET'] = global_config['s3_challenge_bucket']
@@ -457,7 +472,8 @@ def wizard_save_config(global_config):
     iam_arn = iam.get_arn(global_config['iam_role_name'])
     print("    IAM ARN: {}".format(iam_arn))
     print("    Uploading Function ", end='')
-    if awslambda.create_function("lambda-letsencrypt", iam_arn, 'lambda-letsencrypt-dist.zip'):
+    lambda_function_name = "lambda-letsencrypt-".format(global_config['namespace'])
+    if awslambda.create_function(lambda_function_name, iam_arn, 'lambda-letsencrypt-dist.zip'):
         print(colors.OKGREEN + u'\u2713' + colors.ENDC)
     else:
         print(colors.FAIL + u'\u2717' + colors.ENDC)
@@ -483,9 +499,6 @@ def wizard_save_config(global_config):
 
 
 def wizard(global_config):
-    ts = int(time.time())
-    ts = 1000
-    global_config['ts'] = ts
     print_header("Lambda Lets-Encrypt Wizard")
     write_str("""\
         This wizard will guide you through the process of setting up your existing
@@ -512,6 +525,7 @@ def wizard(global_config):
     """)
     print(colors.ENDC)
 
+    wizard_namespace(global_config)
     wizard_sns(global_config)
     wizard_iam(global_config)
     wizard_s3_cfg_bucket(global_config)
@@ -520,6 +534,7 @@ def wizard(global_config):
     wizard_elb(global_config)
 
     cfg_menu = []
+    cfg_menu.append({'selector': 0, 'prompt': 'Namespace', 'return': wizard_namespace})
     cfg_menu.append({'selector': 1, 'prompt': 'SNS', 'return': wizard_sns})
     cfg_menu.append({'selector': 2, 'prompt': 'IAM', 'return': wizard_iam})
     cfg_menu.append({'selector': 3, 'prompt': 'S3 Config', 'return': wizard_s3_cfg_bucket})
