@@ -527,11 +527,11 @@ def configure_cloudfront(domain, s3bucket):
         cf_config['DistributionConfig']['CacheBehaviors']['Quantity'] = quantity + 1
 
     # make sure we use SNI and not dedicated IP($600/month)
-    #ssl_method = cf_config['DistributionConfig']['ViewerCertificate'].get('SSLSupportMethod', None)
-    #if ssl_method != 'sni-only':
-    #    changed = True
-    #    cf_config['DistributionConfig']['ViewerCertificate']['MinimumProtocolVersion'] = 'TLSv1'
-    #    cf_config['DistributionConfig']['ViewerCertificate']['SSLSupportMethod'] = 'sni-only'
+    ssl_method = cf_config['DistributionConfig']['ViewerCertificate'].get('SSLSupportMethod', None)
+    if ssl_method != 'sni-only':
+       changed = True
+       cf_config['DistributionConfig']['ViewerCertificate']['MinimumProtocolVersion'] = 'TLSv1'
+       cf_config['DistributionConfig']['ViewerCertificate']['SSLSupportMethod'] = 'sni-only'
 
     if changed:
         logger.info("Updating cloudfront distribution with additional origin for challenges")
