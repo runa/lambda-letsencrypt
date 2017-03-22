@@ -7,7 +7,7 @@ def create_function(name, iam_role, archive, handler='lambda_function.lambda_han
     with open(archive, 'rb') as f:
         contents = f.read()
     try:
-        lambda_c.create_function(
+        func = lambda_c.create_function(
             FunctionName=name,
             Runtime='python2.7',
             Role=iam_role,
@@ -24,7 +24,7 @@ def create_function(name, iam_role, archive, handler='lambda_function.lambda_han
         print(e)
         return False
 
-    return True
+    return func
 
 
 def list_distributions():
@@ -37,3 +37,6 @@ def list_distributions():
             'Aliases': dist['Aliases'].get('Items', [])
         })
     return ret
+
+
+

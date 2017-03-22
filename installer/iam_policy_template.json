@@ -56,6 +56,26 @@
                 "sns:Publish"
             ],
             "Resource": []
+        },
+        {
+            "Sid": "lambdainvoker",
+            "Effect": "Allow",
+            "Action": [
+                "lambda:InvokeFunction"
+            ],
+            "Resource": [
+                "*"
+            ]
+        },
+        {
+            "Sid": "scheduledevents",
+            "Effect": "Allow",
+            "Action": [
+                "events:*"
+            ],
+            "Resource": [
+                "*"
+            ]
         }
     ]
 }

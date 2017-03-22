@@ -21,7 +21,7 @@ import zipfile
 from docopt import docopt
 from string import Template
 
-from installer import sns, cloudfront, iam, s3, awslambda, elb, route53
+from installer import sns, cloudfront, iam, s3, awslambda, elb, route53, cloudWatchEvents
 
 
 class colors:
@@ -342,6 +342,25 @@ def wizard_challenges(global_config):
     global_config['create_s3_challenge_bucket'] = create_s3_challenge_bucket
     global_config['s3_challenge_bucket'] = s3_challenge_bucket
 
+def wizard_trigger(global_config):
+    print_header("Lets-Encrypt certificate check trigger")
+    write_str("""\
+        To set up certificate and later update it, it is necessary to invoke
+         generated AWS Lambda function regularly. Lambda function will make sure
+         certificate is issued (might take 2-3 invocations), will check its expiry,
+         will update it before it expires.""")
+    print()
+    write_str("""\
+        Trigger is created as a AWS CloudWatch Event rule with target
+        pointing to Lambda function.""")
+    print()
+    write_str("""\
+        If you skip set up of this trigger, you will need to either invoke
+        function yourself or set up trigger which does it.""")
+    print()
+    create_cloudwatch_rule = get_yn("Set up AWS Lambda trigger?", default=True)
+    global_config['create_cloudwatch_rule'] = create_cloudwatch_rule
+
 
 def wizard_summary(global_config):
     gc = global_config
@@ -383,6 +402,9 @@ def wizard_summary(global_config):
     print("Elastic Load Balancers to Manage:")
     for lb in gc['elb_sites']:
         print("    {}:{} - [{}]".format(lb['ELB_NAME'], lb['ELB_PORT'], ",".join(lb['DOMAINS'])))
+
+    print("Automatic checks:")
+    print("Create daily Lambda function trigger:            {}".format(gc['create_cloudwatch_rule']))
 
 
 def wizard_save_config(global_config):
@@ -430,7 +452,12 @@ def wizard_save_config(global_config):
         )
         iam_arn = iam.configure(global_config['iam_role_name'], policy_document)
         # attempt to avoid error: The role defined for the function cannot be assumed by Lambda.
-        time.sleep(10)
+        print("Wait for IAM role")
+        time.sleep(5)
+        print("Still waiting..")
+        time.sleep(5)
+        print("Still waiting...")
+        time.sleep(5)
 
     templatevars['S3_CONFIG_BUCKET'] = global_config['s3_cfg_bucket']
     templatevars['S3_CHALLENGE_BUCKET'] = global_config['s3_challenge_bucket']
@@ -473,29 +500,37 @@ def wizard_save_config(global_config):
     print("    IAM ARN: {}".format(iam_arn))
     print("    Uploading Function ", end='')
     lambda_function_name = "lambda-letsencrypt-{}".format(global_config['namespace'])
-    if awslambda.create_function(lambda_function_name, iam_arn, 'lambda-letsencrypt-dist.zip'):
+    lambda_function = awslambda.create_function(lambda_function_name, iam_arn, 'lambda-letsencrypt-dist.zip')
+    if lambda_function:
         print(colors.OKGREEN + u'\u2713' + colors.ENDC)
     else:
         print(colors.FAIL + u'\u2717' + colors.ENDC)
         return
 
-    print_header("Schedule Lambda Function")
-    write_str("I've done all I can for you now, there's one last step you have to take manually in order to schedule your lambda function to run once a day.")
-    write_str("Log into your aws console and go to this page:")
-    lambda_event_url = "https://console.aws.amazon.com/lambda/home#/functions/lambda-letsencrypt?tab=triggers"
-    print(colors.OKBLUE + lambda_event_url + colors.ENDC)
-    print()
-    write_str('Click on "Add trigger". Click the empty box in the popup and from the dropdown, choose "CloudWatch Events - Schedule". Enter the following:')
-    write_str("Rule name:            'Daily'")
-    write_str("Rule description:     'Run every day'")
-    write_str("Schedule Expression:  'rate(1 day)'")
-    print()
-    write_str("Choose to 'Enable trigger', then click 'Submit'")
+    if global_config['create_cloudwatch_rule']:
+        print("    Setting daily Lambda function trigger ", end='')
+        lambda_execution_rule = cloudWatchEvents.cloudwatch_create_daily_rule_for_function(lambda_function['FunctionName'], lambda_function['FunctionArn'], iam_arn)
+        if lambda_execution_rule:
+            print(colors.OKGREEN + u'\u2713' + colors.ENDC)
+        else:
+            print(colors.FAIL + u'\u2717' + colors.ENDC)
+            return
 
     print_header("Testing")
-    write_str("You may want to test this before you set it to be recurring. Click on the 'Test' button in the AWS Console for the lambda-letsencrypt function. The data you provide to this function does not matter. Make sure to review the logs after it finishes and check for anything out of the ordinary.")
+    write_str("""\
+        You may want to test this before you set it to be recurring. Click on
+        the 'Test' button in the AWS Console for the lambda-letsencrypt function.
+        The data you provide to this function does not matter. Make sure to review
+        the logs after it finishes and check for anything out of the ordinary.
+    """)
     print()
-    write_str("It will take at least 2 runs before your certificates are issued, maybe 3 depending on how fast cloudfront responds. This is because it needs one try to configure cloudfront, one to submit the challenge and have it verified, and one final run to issue the certificate and configure the cloudfront distribution")
+    write_str("""\
+        It will take at least 2 runs before your certificates are issued,
+        maybe 3 depending on how fast cloudfront responds. This is because it
+        needs one try to configure cloudfront, one to submit the challenge and
+        have it verified, and one final run to issue the certificate and configure
+        the cloudfront distribution
+    """)
 
 
 def wizard(global_config):
@@ -532,6 +567,7 @@ def wizard(global_config):
     wizard_challenges(global_config)
     wizard_cf(global_config)
     wizard_elb(global_config)
+    wizard_trigger(global_config)
 
     cfg_menu = []
     cfg_menu.append({'selector': 0, 'prompt': 'Namespace', 'return': wizard_namespace})
@@ -541,6 +577,7 @@ def wizard(global_config):
     cfg_menu.append({'selector': 4, 'prompt': 'Challenges', 'return': wizard_challenges})
     cfg_menu.append({'selector': 5, 'prompt': 'CloudFront', 'return': wizard_cf})
     cfg_menu.append({'selector': 6, 'prompt': 'Elastic Load Balancers', 'return': wizard_cf})
+    cfg_menu.append({'selector': 7, 'prompt': 'Lambda function trigger', 'return': wizard_trigger})
     cfg_menu.append({'selector': 9, 'prompt': 'Done', 'return': None})
 
     finished = False
