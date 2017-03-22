@@ -19,7 +19,7 @@ import time
 import zipfile
 from docopt import docopt
 from string import Template
-from installer import terminal, sns, cloudfront, iam, s3, awslambda, elb, route53, cloudWatchEvents
+from installer import terminal, sns, cloudfront, iam, s3, awslambda, elb, route53, cloud_watch_events
 
 
 def choose_s3_bucket():
@@ -326,7 +326,7 @@ def wizard_summary(global_config):
     print("Notification Email:                              {}".format(gc['sns_email'] or "(notifications disabled)"))
 
     print("S3 Config Bucket:                                {}".format(gc['s3_cfg_bucket']), end="")
-    if (gc['create_s3_cfg_bucket']):
+    if gc['create_s3_cfg_bucket']:
         print(" (to be created)")
     else:
         print(" (existing)")
@@ -339,7 +339,7 @@ def wizard_summary(global_config):
     print("Support HTTP Challenges:                         {}".format(gc['use_http_challenges']))
     if gc['use_http_challenges']:
         print("S3 HTTP Challenge Bucket:                        {}".format(gc['s3_challenge_bucket']), end="")
-        if (gc['create_s3_challenge_bucket']):
+        if gc['create_s3_challenge_bucket']:
             print(" (to be created)")
         else:
             print(" (existing)")
@@ -464,7 +464,7 @@ def wizard_save_config(global_config):
 
     if global_config['create_cloudwatch_rule']:
         print("    Setting daily Lambda function trigger ", end='')
-        lambda_execution_rule = cloudWatchEvents.cloudwatch_create_daily_rule_for_function(
+        lambda_execution_rule = cloud_watch_events.cloudwatch_create_daily_rule_for_function(
             lambda_function['FunctionName'], lambda_function['FunctionArn'], iam_arn)
         if lambda_execution_rule:
             print(terminal.Colors.OKGREEN + u'\u2713' + terminal.Colors.ENDC)
@@ -489,7 +489,7 @@ def wizard_save_config(global_config):
     """)
 
 
-def wizard(global_config):
+def wizard():
     terminal.print_header("Lambda Lets-Encrypt Wizard")
     terminal.write_str("""\
         This wizard will guide you through the process of setting up your existing
@@ -516,6 +516,8 @@ def wizard(global_config):
     """)
     print(terminal.Colors.ENDC)
 
+    global_config = {}
+
     wizard_namespace(global_config)
     wizard_sns(global_config)
     wizard_iam(global_config)
@@ -525,16 +527,17 @@ def wizard(global_config):
     wizard_elb(global_config)
     wizard_trigger(global_config)
 
-    cfg_menu = []
-    cfg_menu.append({'selector': 0, 'prompt': 'Namespace', 'return': wizard_namespace})
-    cfg_menu.append({'selector': 1, 'prompt': 'SNS', 'return': wizard_sns})
-    cfg_menu.append({'selector': 2, 'prompt': 'IAM', 'return': wizard_iam})
-    cfg_menu.append({'selector': 3, 'prompt': 'S3 Config', 'return': wizard_s3_cfg_bucket})
-    cfg_menu.append({'selector': 4, 'prompt': 'Challenges', 'return': wizard_challenges})
-    cfg_menu.append({'selector': 5, 'prompt': 'CloudFront', 'return': wizard_cf})
-    cfg_menu.append({'selector': 6, 'prompt': 'Elastic Load Balancers', 'return': wizard_cf})
-    cfg_menu.append({'selector': 7, 'prompt': 'Lambda function trigger', 'return': wizard_trigger})
-    cfg_menu.append({'selector': 9, 'prompt': 'Done', 'return': None})
+    cfg_menu = [
+        {'selector': 0, 'prompt': 'Namespace', 'return': wizard_namespace},
+        {'selector': 1, 'prompt': 'SNS', 'return': wizard_sns},
+        {'selector': 2, 'prompt': 'IAM', 'return': wizard_iam},
+        {'selector': 3, 'prompt': 'S3 Config', 'return': wizard_s3_cfg_bucket},
+        {'selector': 4, 'prompt': 'Challenges', 'return': wizard_challenges},
+        {'selector': 5, 'prompt': 'CloudFront', 'return': wizard_cf},
+        {'selector': 6, 'prompt': 'Elastic Load Balancers', 'return': wizard_cf},
+        {'selector': 7, 'prompt': 'Lambda function trigger', 'return': wizard_trigger},
+        {'selector': 9, 'prompt': 'Done', 'return': None}
+    ]
 
     finished = False
     while not finished:
@@ -551,5 +554,4 @@ def wizard(global_config):
 
 if __name__ == "__main__":
     args = docopt(__doc__, version='Lambda Lets-Encrypt 1.0')
-    global_config = {}
-    wizard(global_config)
+    wizard()
