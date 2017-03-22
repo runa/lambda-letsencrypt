@@ -29,16 +29,19 @@ def s3_list_buckets():
     return ret
 
 
-def create_bucket(bucket_name):
+def create_bucket(region_name, bucket_name):
     bucket = s3_r.create_bucket(
         Bucket=bucket_name,
-        ACL="private"
+        ACL="private",
+        CreateBucketConfiguration={
+            'LocationConstraint': region_name
+        }
     )
     return bucket
 
 
-def create_web_bucket(bucket_name):
-    bucket = create_bucket(bucket_name)
+def create_web_bucket(region_name, bucket_name):
+    bucket = create_bucket(region_name, bucket_name)
     bucket_policy = bucket.Policy()
     bucket_arn = "arn:aws:s3:::{}".format(bucket_name)
     bucket_policy.put(Policy=WEB_POLICY_DOC.substitute(arn=bucket_arn))

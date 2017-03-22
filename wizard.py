@@ -19,8 +19,20 @@ import time
 import zipfile
 from docopt import docopt
 from string import Template
-from installer import terminal, sns, cloudfront, iam, s3, awslambda, elb, route53, cloud_watch_events
+from installer import terminal, ec2, sns, cloudfront, iam, s3, awslambda, elb, route53, cloud_watch_events
 
+
+def choose_aws_region():
+    region_names = ec2.list_region_names()
+    options = []
+    for i, name in enumerate(region_names):
+        options.append({
+            'selector': i,
+            'prompt': name,
+            'return': name
+        })
+    return terminal.get_selection("Select AWS region to use:", options, prompt_after="Which AWS region?",
+                                  allow_empty=False)
 
 def choose_s3_bucket():
     bucket_list = s3.s3_list_buckets()
@@ -193,6 +205,15 @@ def wizard_namespace(global_config):
     global_config['namespace'] = namespace
 
 
+def wizard_region(global_config):
+    terminal.print_header("AWS Region")
+    terminal.write_str("""Choose the region you want ot use for new resources""")
+
+    aws_region = choose_aws_region()
+
+    global_config['aws_region'] = aws_region
+
+
 def wizard_sns(global_config):
     sns_email = None
 
@@ -322,9 +343,8 @@ def wizard_summary(global_config):
 
     terminal.print_header("**Summary**")
     print("Namespace:                                       {}".format(gc['namespace']))
-
+    print("AWS region:                                      {}".format(gc['namespace']))
     print("Notification Email:                              {}".format(gc['sns_email'] or "(notifications disabled)"))
-
     print("S3 Config Bucket:                                {}".format(gc['s3_cfg_bucket']), end="")
     if gc['create_s3_cfg_bucket']:
         print(" (to be created)")
@@ -358,7 +378,6 @@ def wizard_summary(global_config):
     for lb in gc['elb_sites']:
         print("    {}:{} - [{}]".format(lb['ELB_NAME'], lb['ELB_PORT'], ",".join(lb['DOMAINS'])))
 
-    print("Automatic checks:")
     print("Create daily Lambda function trigger:            {}".format(gc['create_cloudwatch_rule']))
 
 
@@ -370,6 +389,7 @@ def wizard_save_config(global_config):
 
     templatevars['SNS_ARN'] = None
     templatevars['NOTIFY_EMAIL'] = None
+    templatevars['AWS_REGION'] = global_config['aws_region']
 
     # Configure SNS if appropriate
     sns_arn = None
@@ -387,13 +407,13 @@ def wizard_save_config(global_config):
     # create config bucket if necessary
     if global_config['create_s3_cfg_bucket']:
         print("Creating S3 Configuration Bucket ", end='')
-        s3.create_bucket(global_config['s3_cfg_bucket'])
+        s3.create_bucket(global_config['aws_region'], global_config['s3_cfg_bucket'])
         print(terminal.Colors.OKGREEN + u'\u2713' + terminal.Colors.ENDC)
 
     # create challenge bucket if necessary(needs to be configured as static website)
     if global_config['create_s3_challenge_bucket']:
         print("Creating S3 Challenge Bucket ", end='')
-        s3.create_web_bucket(global_config['s3_challenge_bucket'])
+        s3.create_web_bucket(global_config['aws_region'], global_config['s3_challenge_bucket'])
         print(terminal.Colors.OKGREEN + u'\u2713' + terminal.Colors.ENDC)
 
     # create IAM role if required
@@ -519,6 +539,7 @@ def wizard():
     global_config = {}
 
     wizard_namespace(global_config)
+    wizard_region(global_config)
     wizard_sns(global_config)
     wizard_iam(global_config)
     wizard_s3_cfg_bucket(global_config)
@@ -529,13 +550,14 @@ def wizard():
 
     cfg_menu = [
         {'selector': 0, 'prompt': 'Namespace', 'return': wizard_namespace},
-        {'selector': 1, 'prompt': 'SNS', 'return': wizard_sns},
-        {'selector': 2, 'prompt': 'IAM', 'return': wizard_iam},
-        {'selector': 3, 'prompt': 'S3 Config', 'return': wizard_s3_cfg_bucket},
-        {'selector': 4, 'prompt': 'Challenges', 'return': wizard_challenges},
-        {'selector': 5, 'prompt': 'CloudFront', 'return': wizard_cf},
-        {'selector': 6, 'prompt': 'Elastic Load Balancers', 'return': wizard_cf},
-        {'selector': 7, 'prompt': 'Lambda function trigger', 'return': wizard_trigger},
+        {'selector': 1, 'prompt': 'AWS Region', 'return': wizard_region},
+        {'selector': 2, 'prompt': 'SNS', 'return': wizard_sns},
+        {'selector': 3, 'prompt': 'IAM', 'return': wizard_iam},
+        {'selector': 4, 'prompt': 'S3 Config', 'return': wizard_s3_cfg_bucket},
+        {'selector': 5, 'prompt': 'Challenges', 'return': wizard_challenges},
+        {'selector': 6, 'prompt': 'CloudFront', 'return': wizard_cf},
+        {'selector': 7, 'prompt': 'Elastic Load Balancers', 'return': wizard_cf},
+        {'selector': 8, 'prompt': 'Lambda function trigger', 'return': wizard_trigger},
         {'selector': 9, 'prompt': 'Done', 'return': None}
     ]
 
