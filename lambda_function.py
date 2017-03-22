@@ -5,8 +5,14 @@ from time import strftime, gmtime, sleep
 from dateutil.tz import tzutc
 from simple_acme import AcmeUser, AcmeAuthorization, AcmeCert
 from functools import partial
-import urllib2
 import dns.resolver
+
+try:
+    # For Python 3.0 and later
+    from urllib.request import urlopen
+except ImportError:
+    # Fall back to Python 2's urllib2
+    from urllib2 import urlopen
 
 # aws imports
 import boto3
@@ -112,7 +118,7 @@ def s3_challenge_solver(domain, token, keyauth, bucket=None, prefix=None):
 def http_challenge_verifier(domain, token, keyauth):
     url = "http://{}/.well-known/acme-challenge/{}".format(domain, token)
     try:
-        response = urllib2.urlopen(url)
+        response = urlopen(url)
         contents = response.read()
         code = response.getcode()
     except Exception as e:
