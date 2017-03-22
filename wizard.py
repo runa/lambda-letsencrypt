@@ -31,7 +31,8 @@ def choose_s3_bucket():
             'prompt': bucket,
             'return': bucket
         })
-    return terminal.get_selection("Select the S3 Bucket to use:", options, prompt_after="Which S3 Bucket?", allow_empty=False)
+    return terminal.get_selection("Select the S3 Bucket to use:", options, prompt_after="Which S3 Bucket?",
+                                  allow_empty=False)
 
 
 def wizard_elb(global_config):
@@ -67,11 +68,13 @@ def wizard_elb(global_config):
         })
 
     while True:
-        lb = terminal.get_selection("Choose an ELB to configure SSL for(Leave blank for none)", elb_list_opts, prompt_after="Which ELB?", allow_empty=True)
+        lb = terminal.get_selection("Choose an ELB to configure SSL for(Leave blank for none)", elb_list_opts,
+                                    prompt_after="Which ELB?", allow_empty=True)
         if lb is None:
             break
 
-        lb_port = terminal.get_input("What port number will this certificate be for(HTTPS is 443) [443]?", allow_empty=True)
+        lb_port = terminal.get_input("What port number will this certificate be for(HTTPS is 443) [443]?",
+                                     allow_empty=True)
         if len(lb_port) == 0:
             lb_port = 443
 
@@ -79,7 +82,8 @@ def wizard_elb(global_config):
         while True:
             if len(domains) > 0:
                 print("Already selected: {}".format(",".join(domains)))
-            zone = terminal.get_selection("Choose a Route53 Zone that points to this load balancer: ", route53_list_opts, prompt_after="Which zone?", allow_empty=True)
+            zone = terminal.get_selection("Choose a Route53 Zone that points to this load balancer: ",
+                                          route53_list_opts, prompt_after="Which zone?", allow_empty=True)
             # stop when they don't enter anything
             if zone is None:
                 break
@@ -130,14 +134,18 @@ def wizard_cf(global_config):
         as you like.""")
     while True:
         print()
-        dist = terminal.get_selection("Select a CloudFront Distribution to configure with Lets-Encrypt(leave blank to finish)", cf_dist_opts, prompt_after="Which CloudFront Distribution?", allow_empty=True)
+        dist = terminal.get_selection(
+            "Select a CloudFront Distribution to configure with Lets-Encrypt(leave blank to finish)", cf_dist_opts,
+            prompt_after="Which CloudFront Distribution?", allow_empty=True)
         if dist is None:
             break
 
         cnames = dist['Aliases']
         terminal.write_str("The following domain names exist for the selected CloudFront Distribution:")
         terminal.write_str("    " + ", ".join(cnames))
-        terminal.write_str("Each domain in this list will be validated with Lets-Encrypt and added to the certificate assigned to this Distribution.")
+        terminal.write_str("""\
+            Each domain in this list will be validated with Lets-Encrypt and added to the certificate assigned to this
+            Distribution.""")
         print()
         for dns_name in cnames:
             domain = {
@@ -153,7 +161,10 @@ def wizard_cf(global_config):
                     domain['ROUTE53_ZONE_ID'] = route53_id
                     domain['VALIDATION_METHODS'].append('dns-01')
             else:
-                terminal.write_str(terminal.Colors.WARNING + "No Route53 zone detected, DNS validation not possible." + terminal.Colors.ENDC)
+                terminal.write_str(
+                    terminal.Colors.WARNING +
+                    "No Route53 zone detected, DNS validation not possible." +
+                    terminal.Colors.ENDC)
 
             validate_via_http = terminal.get_yn("Validate using HTTP", default=True)
             if validate_via_http:
@@ -167,6 +178,7 @@ def wizard_cf(global_config):
         }
         global_config['cf_sites'].append(site)
 
+
 def wizard_namespace(global_config):
     namespace = None
 
@@ -179,6 +191,7 @@ def wizard_namespace(global_config):
 
     namespace = terminal.get_input("Enter value to append to resource names (eg: foobar): ", allow_empty=False)
     global_config['namespace'] = namespace
+
 
 def wizard_sns(global_config):
     sns_email = None
@@ -200,7 +213,9 @@ def wizard_sns(global_config):
 
 def wizard_s3_cfg_bucket(global_config):
     terminal.print_header("S3 Configuration Bucket")
-    terminal.write_str('An S3 Bucket is required to store configuration. If you already have a bucket you want to use for this choose no and select it from the list. Otherwise let the wizard create one for you.')
+    terminal.write_str("""\
+        An S3 Bucket is required to store configuration. If you already have a bucket you want to use for this choose no
+        and select it from the list. Otherwise let the wizard create one for you.""")
     create_s3_cfg_bucket = terminal.get_yn("Create a bucket for configuration", True)
 
     if create_s3_cfg_bucket:
@@ -214,9 +229,12 @@ def wizard_s3_cfg_bucket(global_config):
 
 def wizard_iam(global_config):
     terminal.print_header("IAM Configuration")
-    terminal.write_str("An IAM role must be created for this lambda function giving it access to CloudFront, Route53, S3, SNS(notifications), IAM(certificates), and CloudWatch(logs/alarms).")
+    terminal.write_str("""\
+        An IAM role must be created for this lambda function giving it access to CloudFront, Route53, S3,
+        SNS(notifications), IAM(certificates), and CloudWatch(logs/alarms).""")
     print()
-    terminal.write_str("If you do not let the wizard create this role you will be asked to select an existing role to use.")
+    terminal.write_str(
+        "If you do not let the wizard create this role you will be asked to select an existing role to use.")
     create_iam_role = terminal.get_yn("Do you want to automatically create this role", True)
     if not create_iam_role:
         role_list = iam.list_roles()
@@ -227,7 +245,8 @@ def wizard_iam(global_config):
                 'prompt': role,
                 'return': role
             })
-        iam_role_name = terminal.get_selection("Select the IAM Role:", options, prompt_after="Which IAM Role?", allow_empty=False)
+        iam_role_name = terminal.get_selection("Select the IAM Role:", options, prompt_after="Which IAM Role?",
+                                               allow_empty=False)
     else:
         iam_role_name = "lambda-letsencrypt-{}".format(global_config['namespace'])
 
@@ -240,20 +259,31 @@ def wizard_challenges(global_config):
     s3_challenge_bucket = None
 
     terminal.print_header("Lets-Encrypt Challenge Validation Settings")
-    terminal.write_str("""This tool will handle validation of your domains automatically. There are two possible validation methods: HTTP and DNS.""")
+    terminal.write_str("""\
+        This tool will handle validation of your domains automatically. There are two possible validation methods: HTTP
+        and DNS.""")
     print()
-    terminal.write_str("HTTP validation is only available for CloudFront sites. It requires an S3 bucket to store the challenge responses in. This bucket needs to be publicly accessible. Your CloudFront Distribution(s) will be reconfigured to use this bucket as an origin for challenge responses.")
+    terminal.write_str("""\
+        HTTP validation is only available for CloudFront sites. It requires an S3 bucket to store the challenge
+        responses in. This bucket needs to be publicly accessible. Your CloudFront Distribution(s) will be reconfigured
+        to use this bucket as an origin for challenge responses.""")
     terminal.write_str("If you do not configure a bucket for this you will only be able to use DNS validation.")
     print()
-    terminal.write_str("DNS validation requires your domain to be managed with Route53. This validation method is always available and requires no additional configuration.")
-    terminal.write_str(terminal.Colors.WARNING + "Note: DNS validation is currently only supported by the staging server." + terminal.Colors.ENDC)
+    terminal.write_str("""\
+        DNS validation requires your domain to be managed with Route53. This validation method is always available and
+        requires no additional configuration.""")
+    terminal.write_str(
+        terminal.Colors.WARNING +
+        "Note: DNS validation is currently only supported by the staging server." +
+        terminal.Colors.ENDC)
     print()
     terminal.write_str("Each domain you want to manage can be configured to validate using either of these methods.")
     print()
 
     use_http_challenges = terminal.get_yn("Do you want to configure HTTP validation", True)
     if use_http_challenges:
-        create_s3_challenge_bucket = terminal.get_yn("Do you want to create a bucket for these challenges(Choose No to select an existing bucket)", True)
+        create_s3_challenge_bucket = terminal.get_yn(
+            "Do you want to create a bucket for these challenges(Choose No to select an existing bucket)", True)
         if create_s3_challenge_bucket:
             s3_challenge_bucket = "lambda-letsencrypt-challenges-{}".format(global_config['namespace'])
         else:
@@ -265,6 +295,7 @@ def wizard_challenges(global_config):
     global_config['use_http_challenges'] = use_http_challenges
     global_config['create_s3_challenge_bucket'] = create_s3_challenge_bucket
     global_config['s3_challenge_bucket'] = s3_challenge_bucket
+
 
 def wizard_trigger(global_config):
     terminal.print_header("Lets-Encrypt certificate check trigger")
@@ -433,7 +464,8 @@ def wizard_save_config(global_config):
 
     if global_config['create_cloudwatch_rule']:
         print("    Setting daily Lambda function trigger ", end='')
-        lambda_execution_rule = cloudWatchEvents.cloudwatch_create_daily_rule_for_function(lambda_function['FunctionName'], lambda_function['FunctionArn'], iam_arn)
+        lambda_execution_rule = cloudWatchEvents.cloudwatch_create_daily_rule_for_function(
+            lambda_function['FunctionName'], lambda_function['FunctionArn'], iam_arn)
         if lambda_execution_rule:
             print(terminal.Colors.OKGREEN + u'\u2713' + terminal.Colors.ENDC)
         else:
@@ -509,7 +541,8 @@ def wizard(global_config):
         wizard_summary(global_config)
         finished = terminal.get_yn("Are these settings correct", True)
         if not finished:
-            selection = terminal.get_selection("Which section do you want to change", cfg_menu, prompt_after="Which section to modify?", allow_empty=False)
+            selection = terminal.get_selection("Which section do you want to change", cfg_menu,
+                                               prompt_after="Which section to modify?", allow_empty=False)
             if selection:
                 selection(global_config)
 
