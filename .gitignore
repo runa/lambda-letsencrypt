@@ -9,3 +9,4 @@ config-wizard.py
 
 # Don't include any generated zip files
 *.zip
+lambda-letsencrypt-dist
