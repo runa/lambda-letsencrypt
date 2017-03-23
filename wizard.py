@@ -8,18 +8,28 @@ Usage:
   wizard.py
   wizard.py (-h | --help)
   wizard.py --version
+  wizard.py --update-lambda
 
 Options:
-    -h --help   Show this screen
-    --version   Show the version
+    -h --help         Show this screen
+    --version         Show the version
+    --update-lambda   Bundle zip from existing config and upload to lambda
 """
 from __future__ import print_function
+import os
 import json
 import time
 import zipfile
 from docopt import docopt
 from string import Template
 from installer import terminal, ec2, sns, cloudfront, iam, s3, awslambda, elb, route53, cloud_watch_events
+
+acme_challenge_file_name = 'simple_acme.py'
+lambda_file_name = 'lambda_function.py'
+zip_file_name = 'lambda-letsencrypt-dist.zip'
+config_file_template_name = 'config.py.dist'
+generated_config_file_name = 'config-wizard.py'
+config_file_name = 'config.py'
 
 
 def choose_aws_region():
@@ -34,6 +44,7 @@ def choose_aws_region():
     return terminal.get_selection("Select AWS region to use:", options, prompt_after="Which AWS region?",
                                   allow_empty=False)
 
+
 def choose_s3_bucket():
     bucket_list = s3.s3_list_buckets()
     options = []
@@ -44,6 +55,19 @@ def choose_s3_bucket():
             'return': bucket
         })
     return terminal.get_selection("Select the S3 Bucket to use:", options, prompt_after="Which S3 Bucket?",
+                                  allow_empty=False)
+
+
+def choose_lambda_function_for_update():
+    function_names = awslambda.list_function_names()
+    options = []
+    for i, name in enumerate(function_names):
+        options.append({
+            'selector': i,
+            'prompt': name,
+            'return': name
+        })
+    return terminal.get_selection("Select function to update:", options, prompt_after="Which Lambda function?",
                                   allow_empty=False)
 
 
@@ -384,7 +408,7 @@ def wizard_summary(global_config):
 def wizard_save_config(global_config):
     terminal.print_header("Making Requested Changes")
     templatevars = {}
-    with open('config.py.dist', 'r') as template:
+    with open(config_file_template_name, 'r') as template:
         configfile = Template(template.read())
 
     templatevars['SNS_ARN'] = None
@@ -444,30 +468,12 @@ def wizard_save_config(global_config):
 
     # write out the config file
     config = configfile.substitute(templatevars)
-    with open("config-wizard.py", 'w') as configfinal:
+    with open(generated_config_file_name, 'w') as configfinal:
         print("Writing Configuration File ", end='')
         configfinal.write(config)
         print(terminal.Colors.OKGREEN + u'\u2713' + terminal.Colors.ENDC)
 
-    print("Creating Zip File To Upload To Lambda")
-    archive_success = True
-    archive = zipfile.ZipFile('lambda-letsencrypt-dist.zip', mode='w')
-    try:
-        for f in ['lambda_function.py', 'simple_acme.py']:
-            print("    Adding '{}'".format(f))
-            archive.write(f)
-        print("    Adding 'config.py'")
-        archive.write('config-wizard.py', 'config.py')
-    except Exception as e:
-        print(terminal.Colors.FAIL + 'Zip File Creation Failed' + terminal.Colors.ENDC)
-        print(e)
-        archive_success = False
-    finally:
-        print('Zip File Created Successfully')
-        archive.close()
-
-    # can't continue if this failed
-    if not archive_success:
+    if not create_lambda_zip():
         return
 
     print("Configuring Lambda Function:")
@@ -475,7 +481,7 @@ def wizard_save_config(global_config):
     print("    IAM ARN: {}".format(iam_arn))
     print("    Uploading Function ", end='')
     lambda_function_name = "lambda-letsencrypt-{}".format(global_config['namespace'])
-    lambda_function = awslambda.create_function(lambda_function_name, iam_arn, 'lambda-letsencrypt-dist.zip')
+    lambda_function = awslambda.create_function(lambda_function_name, iam_arn, zip_file_name)
     if lambda_function:
         print(terminal.Colors.OKGREEN + u'\u2713' + terminal.Colors.ENDC)
     else:
@@ -507,6 +513,56 @@ def wizard_save_config(global_config):
         have it verified, and one final run to issue the certificate and configure
         the cloudfront distribution
     """)
+
+
+def create_lambda_zip():
+
+    print("Creating Zip File To Upload To Lambda")
+
+    try:
+        os.remove(zip_file_name)
+    except OSError:
+        pass
+
+    if not os.path.isfile(generated_config_file_name):
+        print(terminal.Colors.FAIL +
+              "Missing {} file which is created using {} template".format(generated_config_file_name, config_file_template_name) +
+              terminal.Colors.ENDC)
+        return False
+
+    archive_success = True
+    archive = zipfile.ZipFile(zip_file_name, mode='w')
+    try:
+        for f in [lambda_file_name, acme_challenge_file_name]:
+            print("    Adding '{}'".format(f))
+            archive.write(f)
+        print("    Adding '{}'".format(config_file_name))
+        archive.write(generated_config_file_name, config_file_name)
+    except Exception as e:
+        print(terminal.Colors.FAIL + 'Zip File Creation Failed' + terminal.Colors.ENDC)
+        print(e)
+        archive_success = False
+    finally:
+        print('Zip File Created Successfully')
+        archive.close()
+
+    if not archive_success:
+        print("Could not create lambda zip file")
+
+    return archive_success
+
+
+def update_lambda():
+    terminal.print_header("Updating Lambda function")
+    if not create_lambda_zip():
+        return
+    fn = choose_lambda_function_for_update()
+    updated = awslambda.update_function_code(fn, zip_file_name)
+    if updated:
+        print(terminal.Colors.OKGREEN + u'\u2713' + terminal.Colors.ENDC)
+    else:
+        print(terminal.Colors.FAIL + u'\u2717' + terminal.Colors.ENDC)
+        return
 
 
 def wizard():
@@ -576,4 +632,9 @@ def wizard():
 
 if __name__ == "__main__":
     args = docopt(__doc__, version='Lambda Lets-Encrypt 1.0')
-    wizard()
+    if '--update-lambda' in args:
+        update_lambda()
+    else:
+        wizard()
+
+
