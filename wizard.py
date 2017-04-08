@@ -632,7 +632,7 @@ def wizard():
 
 if __name__ == "__main__":
     args = docopt(__doc__, version='Lambda Lets-Encrypt 1.0')
-    if '--update-lambda' in args:
+    if args['--update-lambda']:
         update_lambda()
     else:
         wizard()
