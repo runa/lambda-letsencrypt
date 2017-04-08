@@ -1,12 +1,12 @@
-DIRECTORY_URL = 'https://acme-staging.api.letsencrypt.org'
-# DIRECTORY_URL = 'https://acme-v01.api.letsencrypt.org'
+# DIRECTORY_URL = 'https://acme-staging.api.letsencrypt.org'
+DIRECTORY_URL = 'https://acme-v01.api.letsencrypt.org'
 
 # Number of bits to use for your Lets-Encrypt User Key
 # Leave alone if you don't know what this is
 USERKEY_BITS = 2048
 
 # The AWS region your resources exist in
-AWS_REGION = 'us-east-1'
+AWS_REGION = "$AWS_REGION"
 
 # The SNS topic to send messages to(Set to None to disable)
 SNS_TOPIC_ARN = "$SNS_ARN"

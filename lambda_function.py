@@ -5,7 +5,14 @@ from time import strftime, gmtime, sleep
 from dateutil.tz import tzutc
 from simple_acme import AcmeUser, AcmeAuthorization, AcmeCert
 from functools import partial
-import urllib2
+import dns.resolver
+
+try:
+    # For Python 3.0 and later
+    from urllib.request import urlopen
+except ImportError:
+    # Fall back to Python 2's urllib2
+    from urllib2 import urlopen
 
 # aws imports
 import boto3
@@ -99,17 +106,19 @@ def s3_challenge_solver(domain, token, keyauth, bucket=None, prefix=None):
     logger.info("Writing {} into S3 Bucket {}".format(filename, bucket))
 
     expires = datetime.datetime.now() + datetime.timedelta(days=3)
-    s3.Object(bucket, filename).put(
+    challenge = s3.Object(bucket, filename)
+    challenge.put(
         Body=keyauth,
         Expires=expires
     )
+    challenge.Acl().put(ACL='public-read')
     return True
 
 
 def http_challenge_verifier(domain, token, keyauth):
     url = "http://{}/.well-known/acme-challenge/{}".format(domain, token)
     try:
-        response = urllib2.urlopen(url)
+        response = urlopen(url)
         contents = response.read()
         code = response.getcode()
     except Exception as e:
@@ -150,10 +159,23 @@ def route53_challenge_solver(domain, token, keyauth, zoneid=None):
 
 
 def route53_challenge_verifier(domain, token, keyauth):
-    # TODO: this isn't implemented yet.
-    # XXX: DNS propagation may make this somewhat time consuming.
+    # From https://github.com/brendanmckenzie/lambda-letsencrypt/commit/5f7b5b5ed4541f885a4ea090e30b4b82951b42a3
+    # DNS propagation may make this somewhat time consuming.
     # try to resolve record '_acme-challenge.domain' and verify that the txt record value matches 'keyauth'
-    pass
+    logger.info('Attempting to verify Route53 challenge')
+    count = 0
+    record = '_acme-challenge.{}'.format(domain)
+    while count < 5:
+        try:
+            records = dns.resolver.query(record, 'TXT')
+            logger.info('records: {}'.format(records[0]))
+            return records[0].strings[0]
+        except:
+            logger.info('failed')
+            count += 1
+            sleep(5)
+
+    return False
 
 
 def authorize_domain(user, domain):
@@ -470,6 +492,7 @@ def configure_cloudfront(domain, s3bucket):
             'DomainName': '{}.s3.amazonaws.com'.format(s3bucket),
             'Id': 'lambda-letsencrypt-challenges',
             'OriginPath': "/{}".format(domain['CLOUDFRONT_ID']),
+            'CustomHeaders': {u'Quantity': 0},
             'S3OriginConfig': {u'OriginAccessIdentity': ''}
         })
 
@@ -493,8 +516,10 @@ def configure_cloudfront(domain, s3bucket):
             'ForwardedValues': {
                 u'Cookies': {u'Forward': 'none'},
                 'Headers': {'Quantity': 0},
-                'QueryString': False
+                'QueryString': False,
+                'QueryStringCacheKeys': {'Quantity': 0}
             },
+            'LambdaFunctionAssociations': {'Quantity': 0},
             'MaxTTL': 31536000,
             'MinTTL': 0,
             'PathPattern': '/.well-known/acme-challenge/*',
@@ -508,11 +533,11 @@ def configure_cloudfront(domain, s3bucket):
         cf_config['DistributionConfig']['CacheBehaviors']['Quantity'] = quantity + 1
 
     # make sure we use SNI and not dedicated IP($600/month)
-    #ssl_method = cf_config['DistributionConfig']['ViewerCertificate'].get('SSLSupportMethod', None)
-    #if ssl_method != 'sni-only':
-    #    changed = True
-    #    cf_config['DistributionConfig']['ViewerCertificate']['MinimumProtocolVersion'] = 'TLSv1'
-    #    cf_config['DistributionConfig']['ViewerCertificate']['SSLSupportMethod'] = 'sni-only'
+    ssl_method = cf_config['DistributionConfig']['ViewerCertificate'].get('SSLSupportMethod', None)
+    if ssl_method != 'sni-only':
+       changed = True
+       cf_config['DistributionConfig']['ViewerCertificate']['MinimumProtocolVersion'] = 'TLSv1'
+       cf_config['DistributionConfig']['ViewerCertificate']['SSLSupportMethod'] = 'sni-only'
 
     if changed:
         logger.info("Updating cloudfront distribution with additional origin for challenges")
@@ -547,12 +572,18 @@ def lambda_handler(event, context):
     # Do a few sanity checks
     if not check_bucket(cfg.S3CONFIGBUCKET):
         logger.error("S3 configuration bucket does not exist")
-        # TODO: maybe send email?
+        notify_email(
+            "Lambda-LetsEncrypt config bucket missing {}".format(cfg.S3CONFIGBUCKET),
+            "S3 Configuration bucket {} required for managing certificates in {} is missing".format(cfg.S3CONFIGBUCKET, cfg.SITES)
+        )
         return False
 
     if not check_bucket(cfg.S3CHALLENGEBUCKET):
         logger.error("S3 challenge bucket does not exist")
-        # TODO: maybe send email?
+        notify_email(
+            "Lambda-LetsEncrypt challenge bucket missing {}".format(cfg.S3CHALLENGEBUCKET),
+            "S3 Challenge bucket {} required for LetsEncrypt verifications in {} is missing".format(cfg.S3CHALLENGEBUCKET, cfg.SITES)
+        )
         return False
 
     # check the certificates we want issued

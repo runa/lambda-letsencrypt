@@ -35,6 +35,13 @@ def get_or_create_role(role_name):
             "Service": "lambda.amazonaws.com"
           },
           "Action": "sts:AssumeRole"
+        },
+        {
+          "Effect": "Allow",
+          "Principal": {
+            "Service": "events.amazonaws.com"
+          },
+          "Action": "sts:AssumeRole"
         }
       ]
     }"""

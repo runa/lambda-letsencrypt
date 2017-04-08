@@ -1,9 +1,12 @@
 .DS_Store
 *.pyc
 venv/
+.idea/
 
 # Don't include user config files
 config.py
+config-wizard.py
 
 # Don't include any generated zip files
 *.zip
+lambda-letsencrypt-dist
