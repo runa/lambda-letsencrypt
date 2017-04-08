@@ -6,7 +6,7 @@ DIRECTORY_URL = 'https://acme-v01.api.letsencrypt.org'
 USERKEY_BITS = 2048
 
 # The AWS region your resources exist in
-AWS_REGION = "$AWS_REGION"
+AWS_REGION = 'eu-west-1'
 
 # The SNS topic to send messages to(Set to None to disable)
 SNS_TOPIC_ARN = "$SNS_ARN"
