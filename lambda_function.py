@@ -35,7 +35,7 @@ s3 = boto3.resource('s3', region_name=cfg.AWS_REGION)
 cloudfront = boto3.client('cloudfront', region_name=cfg.AWS_REGION)
 iam = boto3.client('iam', region_name=cfg.AWS_REGION)
 sns = boto3.client('sns', region_name=cfg.AWS_REGION)
-elb = boto3.client('elb', region_name=cfg.AWS_REGION)
+elb = boto3.client('elbv2', region_name=cfg.AWS_REGION)
 route53 = boto3.client('route53', region_name=cfg.AWS_REGION)
 
 # Internal files to store user/authorization information
@@ -310,7 +310,7 @@ def is_elb_cert_expiring(site):
     return True
     try:
         load_balancers = elb.describe_load_balancers(
-            LoadBalancerNames=[site['ELB_NAME']],
+            Names=[site['ELB_NAME']],
         )
     except botocore.exceptions.ClientError as e:
         logger.error("Error getting information about Elastic Load Balancer '{}'".format(site['ELB_NAME']))
@@ -318,18 +318,20 @@ def is_elb_cert_expiring(site):
         return False
 
     currentcert_arn = None
-    for lb in load_balancers['LoadBalancerDescriptions']:
+    for lb in load_balancers['LoadBalancers']:
         if lb['LoadBalancerName'] != site['ELB_NAME']:
             continue
-        for listener in lb['ListenerDescriptions']:
-            if listener['Listener']['LoadBalancerPort'] != site['ELB_PORT']:
+        listeners = elb.describe_listeners(
+            LoadBalancerArn=lb['LoadBalancerArn']
+        ) 
+        for listener in listeners:
+            if listener['Port'] != site['ELB_PORT']:
                 continue
-            if 'SSLCertificateId' in listener['Listener']:
-                currentcert_arn = listener['Listener']['SSLCertificateId']
+            if len(listener['Certificates']) > 0:
+                currentcert_arn = listener['Certificates'][0]['CertificateArn']
     if currentcert_arn is None:
         logger.info("No certificate exists for elb name {}".format(site['ELB_NAME']))
     return iam_check_expiration(arn=currentcert_arn)
-
 
 def is_cf_cert_expiring(site):
     cf_config = cloudfront.get_distribution_config(Id=site['CLOUDFRONT_ID'])
@@ -388,63 +390,69 @@ def configure_cert(site, cert, key, chain):
 def elb_configure_cert(site, cert_id, cert_arn):
     # get the current certificate for the load balancer(if there is one)
     load_balancers = elb.describe_load_balancers(
-        LoadBalancerNames=[site['ELB_NAME']],
+        Names=[site['ELB_NAME']],
     )
-    oldcert_arn = None
-    for lb in load_balancers['LoadBalancerDescriptions']:
+    
+    for lb in load_balancers['LoadBalancers']:
         if lb['LoadBalancerName'] != site['ELB_NAME']:
             continue
-
-        for listener in lb['ListenerDescriptions']:
-            if listener['Listener']['LoadBalancerPort'] != site['ELB_PORT']:
+        listeners = elb.describe_listeners(
+            LoadBalancerArn=lb['LoadBalancerArn']
+        ) 
+        for listener in listeners:
+            if listener['Port'] != site['ELB_PORT']:
                 continue
-            if 'SSLCertificateId' in listener['Listener']:
-                oldcert_arn = listener['Listener']['SSLCertificateId']
-
-    # if there wasn't an old cert, we need to configure the elb for HTTPS
-    if oldcert_arn is None:
-        logger.info("No listener exists for specified port, creating default")
-        # create a load balancer policy
-        logger.debug("Creating load balancer policy")
-        elb.create_load_balancer_policy(
-            LoadBalancerName=site['ELB_NAME'],
-            PolicyName="lambda-letsencrypt-default-ssl-policy",
-            PolicyTypeName="SSLNegotiationPolicyType",
-            PolicyAttributes=[{
-                'AttributeName': 'Reference-Security-Policy',
-                'AttributeValue': 'ELBSecurityPolicy-2015-05'
-            }]
-        )
-        # create a load balancer listener
-        logger.debug("Creating load balancer listener")
-        elb.create_load_balancer_listeners(
-            LoadBalancerName=site['ELB_NAME'],
-            Listeners=[{
-                'Protocol': 'HTTPS',
-                'LoadBalancerPort': site['ELB_PORT'],
-                'InstanceProtocol': 'HTTP',
-                'InstancePort': 80,
-                'SSLCertificateId': cert_arn
-            }]
-        )
-        # associate policy with the listener
-        logger.debug("Setting load balancer listener policy")
-        elb.set_load_balancer_policies_of_listener(
-            LoadBalancerName=site['ELB_NAME'],
-            LoadBalancerPort=site['ELB_PORT'],
-            PolicyNames=['lambda-letsencrypt-default-ssl-policy']
-        )
-    # Set up the new certificate
-    elb.set_load_balancer_listener_ssl_certificate(
-        LoadBalancerName=site['ELB_NAME'],
-        LoadBalancerPort=site['ELB_PORT'],
-        SSLCertificateId=cert_arn
-    )
-
-    # Delete the old certificate if it existed
-    if oldcert_arn:
-        iam_delete_cert(arn=oldcert_arn)
-
+            oldcert_arn = None
+            if len(listener['Certificates']) > 0:
+                oldcert_arn = listener['Certificates'][0]['CertificateArn']
+            if oldcert_arn:
+                # Set up the new certificate
+                elb.modify_listener(
+                    ListenerArn=listener['ListenerArn'],
+                    Certificates=[{
+                        'CertificateArn': cert_arn
+                    }]
+                )
+                # Delete the old certificate if it existed
+                iam_delete_cert(arn=oldcert_arn)
+            else:
+                logger.info("No listener exists for specified port")
+                logger.error("Creating new listeners not supported yet! Please create one first manually, or implement elbv2 version of the code below :)")
+                return False
+                # if there wasn't an old cert, we need to configure the elb for HTTPS
+                # logger.info("No listener exists for specified port, creating default")
+                # create a load balancer policy
+                # logger.debug("Creating load balancer policy")
+                # elb.create_load_balancer_policy(
+                #     LoadBalancerName=site['ELB_NAME'],
+                #     PolicyName="lambda-letsencrypt-default-ssl-policy",
+                #     PolicyTypeName="SSLNegotiationPolicyType",
+                #     PolicyAttributes=[{
+                #         'AttributeName': 'Reference-Security-Policy',
+                #         'AttributeValue': 'ELBSecurityPolicy-2015-05'
+                #     }]
+                # )
+                # # create a load balancer listener
+                # logger.debug("Creating load balancer listener")
+                # elb.create_load_balancer_listeners(
+                #     LoadBalancerName=site['ELB_NAME'],
+                #     Listeners=[{
+                #         'Protocol': 'HTTPS',
+                #         'LoadBalancerPort': site['ELB_PORT'],
+                #         'InstanceProtocol': 'HTTP',
+                #         'InstancePort': 80,
+                #         'SSLCertificateId': cert_arn
+                #     }]
+                # )
+                # # associate policy with the listener
+                # logger.debug("Setting load balancer listener policy")
+                # elb.set_load_balancer_policies_of_listener(
+                #     LoadBalancerName=site['ELB_NAME'],
+                #     LoadBalancerPort=site['ELB_PORT'],
+                #     PolicyNames=['lambda-letsencrypt-default-ssl-policy']
+                # )
+            
+    
     return True
 
 
@@ -578,7 +586,7 @@ def lambda_handler(event, context):
         )
         return False
 
-    if not check_bucket(cfg.S3CHALLENGEBUCKET):
+    if (cfg.S3CHALLENGEBUCKET is not None) and (not check_bucket(cfg.S3CHALLENGEBUCKET)):
         logger.error("S3 challenge bucket does not exist")
         notify_email(
             "Lambda-LetsEncrypt challenge bucket missing {}".format(cfg.S3CHALLENGEBUCKET),
