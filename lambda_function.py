@@ -645,6 +645,7 @@ def lambda_handler(event, context):
                              "Please review the logs in cloudwatch.")
         except Exception as e:
             logger.warning(e)
+            raise
 
 # Support running directly for testing
 if __name__ == '__main__':
