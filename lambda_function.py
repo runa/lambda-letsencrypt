@@ -398,7 +398,7 @@ def elb_configure_cert(site, cert_id, cert_arn):
             continue
         listeners = elb.describe_listeners(
             LoadBalancerArn=lb['LoadBalancerArn']
-        ) 
+        )['Listeners']
         for listener in listeners:
             if listener['Port'] != site['ELB_PORT']:
                 continue
