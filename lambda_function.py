@@ -307,7 +307,6 @@ failing. Please check the logs for it. Attempting to renew now.
 
 
 def is_elb_cert_expiring(site):
-    return True
     try:
         load_balancers = elb.describe_load_balancers(
             Names=[site['ELB_NAME']],
@@ -315,7 +314,7 @@ def is_elb_cert_expiring(site):
     except botocore.exceptions.ClientError as e:
         logger.error("Error getting information about Elastic Load Balancer '{}'".format(site['ELB_NAME']))
         logger.error(e)
-        return False
+        raise
 
     currentcert_arn = None
     for lb in load_balancers['LoadBalancers']:
@@ -323,7 +322,7 @@ def is_elb_cert_expiring(site):
             continue
         listeners = elb.describe_listeners(
             LoadBalancerArn=lb['LoadBalancerArn']
-        ) 
+        )['Listeners']
         for listener in listeners:
             if listener['Port'] != site['ELB_PORT']:
                 continue
@@ -331,7 +330,9 @@ def is_elb_cert_expiring(site):
                 currentcert_arn = listener['Certificates'][0]['CertificateArn']
     if currentcert_arn is None:
         logger.info("No certificate exists for elb name {}".format(site['ELB_NAME']))
-    return iam_check_expiration(arn=currentcert_arn)
+        return True
+    else:
+        return iam_check_expiration(arn=currentcert_arn)
 
 def is_cf_cert_expiring(site):
     cf_config = cloudfront.get_distribution_config(Id=site['CLOUDFRONT_ID'])
