@@ -5,7 +5,7 @@ from time import strftime, gmtime, sleep
 from dateutil.tz import tzutc
 from simple_acme import AcmeUser, AcmeAuthorization, AcmeCert
 from functools import partial
-import dns.resolver
+#import dns.resolver
 
 try:
     # For Python 3.0 and later
