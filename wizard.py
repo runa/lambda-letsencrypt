@@ -367,7 +367,7 @@ def wizard_summary(global_config):
 
     terminal.print_header("**Summary**")
     print("Namespace:                                       {}".format(gc['namespace']))
-    print("AWS region:                                      {}".format(gc['namespace']))
+    print("AWS region:                                      {}".format(gc['aws_region']))
     print("Notification Email:                              {}".format(gc['sns_email'] or "(notifications disabled)"))
     print("S3 Config Bucket:                                {}".format(gc['s3_cfg_bucket']), end="")
     if gc['create_s3_cfg_bucket']:
